@@ -1,36 +1,43 @@
 from typing import Union
-import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from datetime import datetime
+import requests
 
 app = FastAPI()
-def getIpInfo(ip):
-    return requests.get('https://ipinfo.io/{ip}/json'.format(ip=ip)).json()
 
-def getTemp(loc):
-    grid = requests.get('https://api.weather.gov/points/{loc}'.format(loc=loc)).json()
-    r = requests.get(grid['properties']['forecast']).json()
+def get_temp(forecast_url):
+    r = requests.get(forecast_url).json()
+    day_temp = r['properties']['periods'][0]
     return {
-        'time': datetime.fromisoformat(r['properties']['updated']).strftime("%H:%M"),
-        'temp': r['properties']['periods'][0]['temperature'],
-        'wind_speed': r['properties']['periods'][0]['windSpeed'],
-        'short_forecast': r['properties']['periods'][0]['shortForecast'],
-        'chance_of_rain': r['properties']['periods'][0]['probabilityOfPrecipitation']['value'],
-        'icon': r['properties']['periods'][0]['icon']
+        'temperature': day_temp['temperature'],
+        'wind_speed': day_temp['windSpeed'],
+        'short_forecast': day_temp['shortForecast'],
+        'icon': day_temp['icon']
     }
 
+def getLocation(ip):
+    r = requests.get('https://ipinfo.io/{ip}/json'.format(ip=ip)).json()
+    return {
+        'city': r['city'],
+        'loc': r['loc']
+    }
+def getGrid(loc):
+    r = requests.get('https://api.weather.gov/points/{loc}'.format(loc=loc)).json()
+    return r['properties']['forecast']
+
 @app.get("/", response_class=HTMLResponse)
-def read_root(request: Request):
+async def read_items(request: Request):
     client_host = request.client.host
-    print(client_host)
-    ip_info = getIpInfo('72.229.28.185')
-    r = getTemp(ip_info['loc'])
-    return """
-        <html>
-            <head>
-                <title>Some HTML in here</title>
-                <!-- Font Awesome -->
+    client_host = '65.63.255.255' # TODO remove it
+    location = getLocation(client_host)
+    forecast_url = getGrid(location['loc'])
+    temp = get_temp(forecast_url)
+    pre_pos = '20'
+    html_content = """
+    <html>
+        <head>
+            <title>Weather</title>
+            <!-- Font Awesome -->
 <link
   href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
   rel="stylesheet"
@@ -45,14 +52,13 @@ def read_root(request: Request):
   href="https://cdnjs.cloudflare.com/ajax/libs/mdb-ui-kit/6.4.1/mdb.min.css"
   rel="stylesheet"
 />
-
-                <script
+<script
   type="text/javascript"
   src="https://cdnjs.cloudflare.com/ajax/libs/mdb-ui-kit/6.4.1/mdb.min.js"
 ></script>
-            </head>
-            <body>
-                <section class="vh-100" style="background-color: #4B515D;">
+        </head>
+        <body>
+            <section class="vh-100" style="background-color: #4B515D;">
   <div class="container py-5 h-100">
 
     <div class="row d-flex justify-content-center align-items-center h-100">
@@ -63,11 +69,11 @@ def read_root(request: Request):
 
             <div class="d-flex">
               <h6 class="flex-grow-1">{city}</h6>
-              <h6>{time}</h6>
+              <h6>15:07</h6>
             </div>
 
             <div class="d-flex flex-column text-center mt-5 mb-4">
-              <h6 class="display-4 mb-0 font-weight-bold" style="color: #1C2331;"> {temp}°F </h6>
+              <h6 class="display-4 mb-0 font-weight-bold" style="color: #1C2331;"> {temperature}°F </h6>
               <span class="small" style="color: #868B94">{short_forecast}</span>
             </div>
 
@@ -75,7 +81,9 @@ def read_root(request: Request):
               <div class="flex-grow-1" style="font-size: 1rem;">
                 <div><i class="fas fa-wind fa-fw" style="color: #868B94;"></i> <span class="ms-1"> {wind_speed}
                   </span></div>
-                <div><i class="fas fa-tint fa-fw" style="color: #868B94;"></i> <span class="ms-1"> {chance_of_rain}% </span>
+                <div><i class="fas fa-tint fa-fw" style="color: #868B94;"></i> <span class="ms-1"> {pre_pos}% </span>
+                </div>
+                <div><i class="fas fa-sun fa-fw" style="color: #868B94;"></i> <span class="ms-1"> 0.2h </span>
                 </div>
               </div>
               <div>
@@ -92,11 +100,9 @@ def read_root(request: Request):
 
   </div>
 </section>
-            </body>
-        </html>
-        """.format(wind_speed=r['wind_speed'], temp=r['temp'], short_forecast=r['short_forecast'], 
-                   icon=r['icon'], time=r['time'], chance_of_rain=r['chance_of_rain'], city=ip_info['city'])
+        </body>
+    </html>
+    """.format(temperature=temp['temperature'], wind_speed=temp['wind_speed'],
+                city=location['city'], pre_pos=pre_pos, icon=temp['icon'], short_forecast=temp['short_forecast'] )
+    return HTMLResponse(content=html_content, status_code=200)
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Union[str, None] = None):
-    return {"item_id": item_id, "q": q}
